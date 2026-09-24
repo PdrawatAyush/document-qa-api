@@ -1,0 +1,15 @@
+venv/
+venv2/
+venv_ay1/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+data/
+chroma_data/
+uploads/
+.env
+tests/
+.pytest_cache/
+*.db
+README.md
