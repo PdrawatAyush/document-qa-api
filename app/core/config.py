@@ -24,7 +24,7 @@ class Settings:
     # Embeddings
     EMBEDDING_MODEL_NAME: str = os.environ.get("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
 
-    # Chunking
+    # Chunking (token counts, via tiktoken cl100k_base -- see app/services/chunking.py)
     CHUNK_SIZE: int = int(os.environ.get("CHUNK_SIZE", "1000"))
     CHUNK_OVERLAP: int = int(os.environ.get("CHUNK_OVERLAP", "150"))
 
