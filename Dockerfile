@@ -2,9 +2,17 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# System deps needed to build some Python wheels (e.g. tokenizers) on slim images.
+# build-essential: needed to build some Python wheels (e.g. tokenizers) on
+#   slim images if a prebuilt wheel isn't available for this platform.
+# libgomp1: the GNU OpenMP runtime -- torch (a sentence-transformers
+#   dependency) is linked against it and importing torch fails at runtime
+#   on python:3.11-slim with "libgomp.so.1: cannot open shared object file"
+#   if it isn't explicitly installed (it is not guaranteed to be pulled in
+#   as a transitive dependency of build-essential).
+# curl: used for basic in-container debugging/health checks.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    libgomp1 \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
