@@ -1,4 +1,6 @@
-"""Password hashing and JWT helpers."""
+"""Password hashing, JWT, and refresh-token helpers."""
+import hashlib
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -8,6 +10,8 @@ from passlib.context import CryptContext
 from app.core.config import settings
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+REFRESH_TOKEN_BYTES = 32
 
 
 def hash_password(password: str) -> str:
@@ -33,3 +37,24 @@ def decode_access_token(token: str) -> Optional[str]:
         return payload.get("sub")
     except JWTError:
         return None
+
+
+def utcnow_naive() -> datetime:
+    """UTC 'now' as a naive datetime, matching how SQLite/SQLAlchemy round-trips
+    DateTime columns here (no tzinfo preserved) so stored and freshly-computed
+    values can be compared directly without naive/aware mismatches."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def new_refresh_token_value() -> str:
+    """A random opaque refresh token (not a JWT). Only its hash is stored, so a
+    leaked database dump doesn't hand out usable refresh tokens."""
+    return secrets.token_urlsafe(REFRESH_TOKEN_BYTES)
+
+
+def hash_refresh_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def refresh_token_expiry() -> datetime:
+    return utcnow_naive() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
