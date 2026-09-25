@@ -2,7 +2,23 @@
 import io
 from typing import List
 
+import tiktoken
 from pypdf import PdfReader
+
+# cl100k_base is the encoding used by GPT-3.5/4-era OpenAI models. Anthropic
+# doesn't publish a public tokenizer, so this is used as a stand-in purely to
+# measure chunk size/overlap in "tokens" rather than raw characters -- it's
+# not meant to exactly match Claude's tokenizer, just to give a much more
+# accurate proxy for LLM context budgeting than character counts do.
+_ENCODING_NAME = "cl100k_base"
+_encoding = None
+
+
+def _get_encoding():
+    global _encoding
+    if _encoding is None:
+        _encoding = tiktoken.get_encoding(_ENCODING_NAME)
+    return _encoding
 
 
 def extract_text(filename: str, content_type: str, raw_bytes: bytes) -> str:
@@ -29,11 +45,14 @@ def extract_text(filename: str, content_type: str, raw_bytes: bytes) -> str:
 
 
 def chunk_text(text: str, chunk_size: int = 1000, chunk_overlap: int = 150) -> List[str]:
-    """Split text into overlapping chunks, breaking on whitespace where possible.
+    """Split text into overlapping chunks, measured in tokens (via tiktoken's
+    cl100k_base encoding) rather than characters, so chunk_size lines up with
+    actual LLM context budgeting instead of being a rough character proxy.
 
-    chunk_size / chunk_overlap are measured in characters. This keeps the
-    dependency footprint small (no tokenizer needed) while still giving
-    reasonably sized, context-preserving chunks for embedding.
+    chunk_size / chunk_overlap are token counts. Each chunk is produced by
+    slicing the token stream and decoding back to text, so chunk boundaries
+    can fall mid-word (tokens don't align to whitespace) -- that's fine for
+    embedding/retrieval purposes and is how most token-based chunkers work.
     """
     if chunk_overlap >= chunk_size:
         raise ValueError("chunk_overlap must be smaller than chunk_size")
@@ -42,25 +61,31 @@ def chunk_text(text: str, chunk_size: int = 1000, chunk_overlap: int = 150) -> L
     if not normalized:
         return []
 
+    encoding = _get_encoding()
+    tokens = encoding.encode(normalized)
+    total_tokens = len(tokens)
+    if total_tokens == 0:
+        return []
+
     chunks = []
     start = 0
-    text_len = len(normalized)
     step = chunk_size - chunk_overlap
 
-    while start < text_len:
-        end = min(start + chunk_size, text_len)
+    while start < total_tokens:
+        end = min(start + chunk_size, total_tokens)
 
-        # Try to break on a word boundary instead of mid-word, unless we're
-        # already at the end of the text.
-        if end < text_len:
-            last_space = normalized.rfind(" ", start, end)
-            if last_space > start:
-                end = last_space
+        piece = encoding.decode(tokens[start:end]).strip()
+        if piece:
+            chunks.append(piece)
 
-        chunk = normalized[start:end].strip()
-        if chunk:
-            chunks.append(chunk)
-
+        # Once a chunk has reached the end of the token stream there is
+        # nothing left to cover -- stop instead of sliding the window
+        # forward again, which would otherwise emit a spurious tiny final
+        # chunk that just duplicates the tail of the previous one (only
+        # visible once the input is short enough that the *first* chunk
+        # already reaches the end).
+        if end >= total_tokens:
+            break
         start += step
 
     return chunks
