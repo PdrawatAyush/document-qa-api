@@ -11,6 +11,15 @@ pypdf==5.1.0
 tiktoken==0.14.0
 sentence-transformers==3.3.1
 chromadb==0.5.23
+# chromadb 0.5.23 declares posthog>=2.4.0 with no upper bound, but its
+# telemetry code still calls the pre-3.0 posthog.capture(distinct_id, event,
+# properties) API. Without this pin, pip resolves posthog to its current 7.x
+# release, whose capture() signature changed, and every Chroma
+# add/query/create call logs "Failed to send telemetry event ...: capture()
+# takes 1 positional argument but 3 were given" (harmless but noisy; found
+# during a live smoke test of this app). Pinning posthog<3.0.0 keeps it on
+# the API chromadb 0.5.23 actually expects.
+posthog<3.0.0
 anthropic==0.40.0
 httpx==0.27.2
 pytest==8.3.4
