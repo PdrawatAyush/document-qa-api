@@ -2,9 +2,9 @@
 
 A FastAPI service that lets you upload documents, then ask natural-language questions and get answers with citations back to the source text (retrieval-augmented generation).
 
-Status: working end-to-end — upload, token-based chunking, embedding, retrieval, cited generation, JWT auth with refresh tokens and per-user document scoping, tests, and Docker are all implemented. See the primary job-search project at `../personal project` for the near-term ₹50k/2-3 month plan; this is a portfolio/stretch piece built alongside it.
+Status: working end-to-end — upload, token-based chunking, embedding, retrieval, cited generation, JWT auth with refresh tokens and per-user document scoping, tests, and Docker are all implemented. Built with AI-assisted development (Claude Code); design, review and testing are mine.
 
-**Verified**: beyond the pytest suite (mocked LLM calls), this was actually run live — a real `uvicorn` process hit with real HTTP requests (not `TestClient`) — exercising: register → login (access + refresh token) → refresh the access token → reuse-of-rotated-refresh-token rejected → logout revokes the refresh token → upload a real `.txt` file → `/qa/retrieve` returns sensible, correctly-scored chunks → `/qa/ask` returns a clean `503` with no `ANTHROPIC_API_KEY` set (no key was available in this environment, so the real-generation path itself is still unexercised live). That live run caught and fixed two real bugs that the mocked test suite couldn't see (see "Known limitations / notes" and the git history for details): a character-chunking edge case that emitted a spurious duplicate tail chunk for short documents, and a `chromadb`/`posthog` dependency-version mismatch that spammed telemetry errors on every vector-store call.
+**Verified**: beyond the pytest suite (mocked LLM calls), this was actually run live — a real `uvicorn` process hit with real HTTP requests (not `TestClient`) — exercising: register → login (access + refresh token) → refresh the access token → reuse-of-rotated-refresh-token rejected → logout revokes the refresh token → upload a real `.txt` file → `/qa/retrieve` returns sensible, correctly-scored chunks → `/qa/ask` returns a clean `503` with no `ANTHROPIC_API_KEY` set (the real-generation path is covered by mocked tests but has not yet been run live with a key). That live run caught and fixed two real bugs that the mocked test suite couldn't see (see "Known limitations / notes" and the git history for details): a character-chunking edge case that emitted a spurious duplicate tail chunk for short documents, and a `chromadb`/`posthog` dependency-version mismatch that spammed telemetry errors on every vector-store call.
 
 ## Stack
 - **FastAPI** — REST API
@@ -22,7 +22,7 @@ Status: working end-to-end — upload, token-based chunking, embedding, retrieva
 - [x] Ask a question, retrieve relevant chunks, generate an answer with citations to source chunks
 - [x] Multiple documents per user, optionally scope a question to one document
 - [x] Auth (JWT access tokens + rotating, revocable refresh tokens) so documents (and retrieval) are scoped per user
-- [x] Dockerized, deployable (Dockerfile/compose read-reviewed for correctness; not run — no Docker daemon in this environment)
+- [x] Dockerized (Dockerfile and compose reviewed for correctness; container build not yet run)
 - [x] pytest suite covering auth, refresh tokens, chunking, upload, retrieval, generation, and user isolation
 - [x] Live end-to-end smoke test against a real running server (see "Verified" above)
 
@@ -91,7 +91,7 @@ docker compose up --build
 
 The API is then available at http://localhost:8000. SQLite and Chroma data persist in a named Docker volume (`docqa_data`) across restarts. Pass `ANTHROPIC_API_KEY` (and other overrides) via a `.env` file in the project root — docker-compose reads it automatically — or via your shell environment.
 
-Note: the Dockerfile and docker-compose.yml have been carefully read-reviewed (base image, `COPY` paths against the actual project layout, `EXPOSE`/port mapping, the `docqa_data` volume against `DATA_DIR`, and `requirements.txt` against every import in `app/`) and one real gap was fixed as part of that review — `libgomp1` (the GNU OpenMP runtime `torch`/sentence-transformers needs at import time) is now installed explicitly, since it isn't reliably pulled in as a transitive dependency of `build-essential` alone on `python:3.11-slim`. That said, the build/run itself remains **unverified by actual execution** — no Docker daemon was available in this environment.
+Note: the Dockerfile and docker-compose.yml have been carefully read-reviewed (base image, `COPY` paths against the actual project layout, `EXPOSE`/port mapping, the `docqa_data` volume against `DATA_DIR`, and `requirements.txt` against every import in `app/`) and one real gap was fixed as part of that review — `libgomp1` (the GNU OpenMP runtime `torch`/sentence-transformers needs at import time) is now installed explicitly, since it isn't reliably pulled in as a transitive dependency of `build-essential` alone on `python:3.11-slim`. The container build itself has not yet been run.
 
 ## Running tests
 
@@ -109,8 +109,8 @@ The embedding model runs for real in tests (it's local and free); only the Anthr
 
 ## Known limitations / notes
 - PDF text extraction (`pypdf`) works well for text-based PDFs; scanned/image-only PDFs would need OCR, which is out of scope here.
-- SQLite is used for simplicity per the project brief; swapping to Postgres later would mean changing the connection string in `app/database.py` and adding a driver. (Note: `RefreshToken.expires_at` comparisons use naive UTC datetimes specifically because SQLite/SQLAlchemy doesn't round-trip timezone info on this column type — a Postgres migration should double check that comparison still holds, or switch to timezone-aware columns.)
-- Docker setup has been read-reviewed for correctness (and one real bug fixed — see the Docker section above) but remains unverified by actual execution — no Docker daemon available in this environment.
+- SQLite is used for simplicity; swapping to Postgres later would mean changing the connection string in `app/database.py` and adding a driver. (Note: `RefreshToken.expires_at` comparisons use naive UTC datetimes specifically because SQLite/SQLAlchemy doesn't round-trip timezone info on this column type — a Postgres migration should double check that comparison still holds, or switch to timezone-aware columns.)
+- Docker setup has been reviewed for correctness (and one real bug fixed — see the Docker section above), but the container build has not yet been run.
 - Refresh-token rotation revokes the *old* token but there's no "revoke all sessions for this user" endpoint yet — only per-token revocation via `/auth/logout`.
 - ~~Chunking is character-based~~ — now token-based via `tiktoken` (`cl100k_base`), see the Stack section. Note this encoding is a stand-in, not Claude's actual tokenizer (Anthropic doesn't publish one), so it's a much closer proxy for LLM context budgeting than character counts, but not an exact one.
 - ~~No refresh tokens~~ — resolved, see the Stack/Features sections and `POST /auth/refresh` / `POST /auth/logout` above.
